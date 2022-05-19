@@ -1,10 +1,11 @@
 import random
 from typing import Tuple, List
 from math import log2
-from tqdm import trange, tqdm
+from tqdm import tqdm
 from multiprocessing import Pool
 
 from shapes import Shape
+from color import color_distance
 
 import cv2
 import numpy
@@ -32,23 +33,6 @@ OFFSPRING_COUNT = 5
 # are randomly generated using the same method as the initial shapes (used in first iteration)
 # Those shapes are not based off parent shapes and can vary wildly.
 NEW_SHAPE_COUNT = 150
-
-
-def color_distance(c1: numpy.ndarray, c2: numpy.ndarray):
-    # https://en.wikipedia.org/wiki/Color_difference
-    # Cast to int
-    c1 = [i.item() for i in c1]
-    c2 = [i.item() for i in c2]
-
-    r_bar = 0.5 * (c1[0] + c2[0])
-    d_r = c1[0] - c2[0]
-    d_g = c1[1] - c2[1]
-    d_b = c1[2] - c2[2]
-
-    if r_bar < 128:
-        return (2 * d_r ** 2) + (4 * d_g ** 2) + (3 * d_b ** 2)
-    else:
-        return (3 * d_r ** 2) + (4 * d_g ** 2) + (2 * d_b ** 2)
 
 
 def get_score(img1, img2):
@@ -97,19 +81,9 @@ def generate_offsprings(current_score: int, shapes: List[Tuple[int, Shape]], can
 
 
 def pool_job(score: int, shape: Shape, canvas: numpy.ndarray, source_img: numpy.ndarray):
-    source_width, source_height = len(source_img[0]), len(source_img)
-
     canvas_copy = canvas.copy()
-    if score == 0 or shape.get_bounding_box().get_size(source_width, source_height) >= source_img.size // 6:
-        # No previous score or very large shape, calculate score over whole image
-        shape.draw(canvas_copy)
-        return get_score(source_img, canvas_copy)  # Update score for shape in list
-    else:
-        # Small shape, compute score of region overlapped by bounding box before and after shape
-        prev_score = get_box_score(source_img, canvas_copy, shape)
-        shape.draw(canvas_copy)
-        new_score = get_box_score(source_img, canvas_copy, shape)
-        return score + (new_score - prev_score)  # Increment previous score by bbox diff
+    score += shape.draw(canvas_copy, source_img)
+    return score
 
 
 def main():
@@ -127,12 +101,10 @@ def main():
     current_score = 0
     drawn_shapes = 0
     first_iter = True
-    while drawn_shapes < 50000:
+    while drawn_shapes < 30:  # TODO make global
         # Generate shapes
         if not first_iter:
             shapes = generate_offsprings(current_score, shapes, canvas)
-
-        first_iter = False  # Set to false for future loops
 
         # Calculate best shape to add to image
         with Pool(processes=20) as p:
@@ -141,7 +113,8 @@ def main():
                 score, shape = shapes[i]
                 args.append((score, shape, canvas, source_img))
 
-            score_list = p.starmap(pool_job, tqdm(args, desc=str(drawn_shapes), total=len(shapes), unit='shapes'))
+            score_list = p.starmap(pool_job, tqdm(args, desc=f'{drawn_shapes} ({current_score})',
+                                                  total=len(shapes), unit='shapes'))
 
         for i, score in enumerate(score_list):
             shapes[i] = score, shapes[i][1]  # Assign score (index 0) to every object
@@ -153,14 +126,19 @@ def main():
             # In the top n shapes, draw from worst to best to avoid overwriting best shape with lower quality one
             if shapes[i][0] < current_score:
                 # Shape improves score
-                shapes[i][1].draw(canvas)
+                current_score += shapes[i][1].draw(canvas, source_img)
                 drawn_shapes += 1
 
         shapes = shapes[:SURVIVOR_COUNT]  # Delete low-scoring shapes
         cv2.imshow('Canvas', canvas)
         cv2.waitKey(1)  # Wait 1ms to render image
-        current_score = get_score(source_img, canvas)
+        if first_iter:
+            current_score = get_score(source_img, canvas)
+        # If not first iter, score gets updated in previous for loop, when drawing shapes unto canvas
 
+        first_iter = False  # Set to false for future loops
+
+    print(f'Final image values: # of shapes: {drawn_shapes}, score: {current_score}')
     cv2.waitKey(0)  # Wait until keypress
 
 

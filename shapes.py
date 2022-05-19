@@ -6,12 +6,21 @@ from typing import Callable, List
 from math import floor, ceil
 
 from bounding import BoundingBox
+from color import color_distance
 
 
-def write_pixel(array, row, col, color):
+def write_pixel(array, row, col, color, source_img) -> int:
+    canvas_pixel = array[row][col]
+    source_pixel = source_img[row][col]
+    prev_score = color_distance(canvas_pixel, source_pixel)
+
     for i in range(3):
         # Input is rgb, cv2 needs bgr, so invert color order
         array[row][col][i] = color[::-1][i]
+
+    canvas_pixel = array[row][col]
+    new_score = color_distance(canvas_pixel, source_pixel)
+    return new_score - prev_score
 
 
 class Shape(ABC):
@@ -25,7 +34,15 @@ class Shape(ABC):
         pass
 
     @abstractmethod
-    def draw(self, array) -> None:
+    def draw(self, array, source_img) -> int:
+        """
+        Draws the current shape into the canvas array and computes the
+        score difference from the newly-drawn pixel.
+
+        :param array: Canvas to draw the shape to
+        :param source_img: Source image
+        :return: an integer representing the difference between the old score and the new score
+        """
         pass
 
     @abstractmethod
@@ -62,8 +79,9 @@ class Circle(Shape):
     def get_bounding_box(self) -> BoundingBox:
         return self.bounding_box
 
-    def draw(self, array) -> None:
+    def draw(self, array, source_img) -> int:
         width, height = len(array[0]), len(array)
+        score_diff = 0
 
         r_square = self.radius ** 2
 
@@ -76,7 +94,8 @@ class Circle(Shape):
             for c in range(c_min, c_max):
                 distance_square = (r - self.row) ** 2 + (c - self.col) ** 2
                 if distance_square <= r_square:
-                    write_pixel(array, r, c, self.color)
+                    score_diff += write_pixel(array, r, c, self.color, source_img)
+        return score_diff
 
     def generate_child(self, random_dist: Callable, array) -> Circle:
         width, height = len(array[0]), len(array)
@@ -112,10 +131,12 @@ class Rectangle(Shape):
     def get_bounding_box(self) -> BoundingBox:
         return self.bounding_box
 
-    def draw(self, array) -> None:
+    def draw(self, array, source_img) -> int:
+        score_diff = 0
         for row in self.bounding_box.row_range(len(array)):
             for col in self.bounding_box.col_range(len(array[0])):
-                write_pixel(array, row, col, self.color)
+                score_diff += write_pixel(array, row, col, self.color, source_img)
+        return score_diff
 
     def generate_child(self, random_dist: Callable, array) -> Shape:
         width, height = len(array[0]), len(array)
