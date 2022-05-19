@@ -79,11 +79,11 @@ def get_weighted_random():
     return 5 * log2(-1/(random.random()-1))  # Scale to increase variance
 
 
-def generate_children(current_score: int, shapes: List[Tuple[int, Shape]], canvas):
+def generate_offsprings(current_score: int, shapes: List[Tuple[int, Shape]], canvas):
     new_shapes = list()
-    for i in range(SURVIVOR_COUNT):
+    for i in range(min(SURVIVOR_COUNT, len(shapes))):
         # Copy survivor shapes to new array
-        new_shapes[i] = current_score, shapes[i][1]
+        new_shapes.append((current_score, shapes[i][1]))
 
         # Generate offsprings from survivors
         for _ in range(OFFSPRING_COUNT):
@@ -113,7 +113,7 @@ def pool_job(score: int, shape: Shape, canvas: numpy.ndarray, source_img: numpy.
 
 
 def main():
-    source_img = cv2.imread('sources/apples.jpg')
+    source_img = cv2.imread('sources/apples.jpg')  # TODO read path from args
     source_width, source_height = len(source_img[0]), len(source_img)
     cv2.imshow('Original', source_img)
     cv2.waitKey(1)  # Wait 1ms to render image
@@ -130,7 +130,7 @@ def main():
     while drawn_shapes < 50000:
         # Generate shapes
         if not first_iter:
-            shapes = generate_children(current_score, shapes, canvas)
+            shapes = generate_offsprings(current_score, shapes, canvas)
 
         first_iter = False  # Set to false for future loops
 
